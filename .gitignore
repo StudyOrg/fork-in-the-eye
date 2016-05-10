@@ -27,6 +27,11 @@
 *.i*86
 *.x86_64
 *.hex
+fcon
 
 # Debug files
 *.dSYM/
+
+# Logs
+events.log
+pipes.log
