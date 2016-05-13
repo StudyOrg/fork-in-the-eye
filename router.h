@@ -5,8 +5,8 @@
 
 #include "ipc.h"
 
-const int8_t IN = 0;
-const int8_t OUT = 1;
+static const int8_t IN = 0;
+static const int8_t OUT = 1;
 
 typedef struct {
 	int filedes[2]; // 0 = read, 1 = write

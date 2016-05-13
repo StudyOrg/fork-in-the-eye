@@ -8,4 +8,4 @@ all:
 	$(CC) $(CFLAGS) -o fcon *.c
 
 clean:
-	rm -f *.o fcon
+	rm -f *.o fcon *.log
