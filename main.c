@@ -4,164 +4,160 @@
 #include <getopt.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 #include "ipc.h"
 #include "common.h"
 #include "pa1.h"
 
 #include "router.h"
-#include "util.h"
+#include "log.h"
 #include "pipes_util.h"
 
 int main(int argc, char * argv[]) {
-	Router router;
+    init_log();
 
-	int opt = 0;
-	while( (opt = getopt( argc, argv, "p:" )) != -1 ) {
-		switch( opt ) {
-			case 'p':
-				router.procnum = atoi(optarg) + 1;
-				break;
-			case '?':
-			default:
-				fprintf(stderr, "Bad parameter\n");
-				exit(1);
-		}
-	}
+    Router router;
 
-	router.recent_pid = 0;
+    int opt = 0;
+    while ((opt = getopt( argc, argv, "p:" )) != -1) {
+        switch (opt) {
+        case 'p':
+            router.procnum = atoi(optarg);
+            break;
+        default:
+            DIE("Bad parameter\n");
+        }
+    }
 
-	FILE *pipes_logf, *events_logf;
+    TEST(router.procnum <= 0, "Bad number of process");
 
-	pipes_logf = fopen(pipes_log, "w");
-	TEST(pipes_logf == NULL, "Can't open pipes log file");
+    router.procnum += 1; // Включая родительский процесс
 
-	events_logf = fopen(events_log, "a");
-	TEST(events_logf == NULL, "Can't open events log file");
+    router.recent_pid = 0;
 
-	for(int i = 0; i < router.procnum; i++) {
-		for(int j = 0; j < router.procnum; j++) {
-			if(j == i) {
-				router.routes[i][j].filedes[IN] = -1;
-				router.routes[i][j].filedes[OUT] = -1;
-			} else {
-				TEST(pipe(router.routes[i][j].filedes) < 0, "Can't create pipe");
+    for (int i = 0; i < router.procnum; i++) {
+        for (int j = 0; j < router.procnum; j++) {
+            int* filedes = router.routes[i][j].filedes;
 
-				int mode = fcntl(router.routes[i][j].filedes[0], F_GETFL);
-				fcntl(router.routes[i][j].filedes[0], F_SETFL, mode | O_NONBLOCK);
+            if (j == i) {
+                filedes[IN] = -1;
+                filedes[OUT] = -1;
+            } else {
+                TEST(pipe(filedes) < 0, "Can't create pipe");
 
-				fprintf(pipes_logf, "Created route %d <--> %d\n", j, i);
-			}
-		}
-	}
+                int mode = fcntl(filedes[IN], F_GETFL);
+                fcntl(filedes[IN], F_SETFL, mode | O_NONBLOCK);
 
-	fclose(pipes_logf);
+                log.pipes_info("Created pipe %d <--> %d\n", j, i);
+            }
+        }
+    }
 
-	Message send_msg, rec_msg;
-	send_msg.s_header.s_magic = MESSAGE_MAGIC;
-	send_msg.s_header.s_local_time = 0;
+    Message send_msg, rec_msg;
+    send_msg.s_header.s_magic = MESSAGE_MAGIC;
+    send_msg.s_header.s_local_time = 0;
 
-	pid_t pid;
-	int start_msgs, done_msgs;
+    pid_t pid;
+    int start_msgs, done_msgs;
 
-	for(int i = 1; i < router.procnum; i++) {
-		pid = fork();
+    for (int i = 1; i < router.procnum; i++) {
+        pid = fork();
 
-		if(pid < 0) {
-			fprintf(stderr, "Error creating the child\n");
-			exit(1);
-		} else if (pid == 0) {
+        TEST(pid < 0, "Error creating the child\n");
 
-			start_msgs = router.procnum - 2;
-			done_msgs = router.procnum - 2;
+        if (pid == 0) {
+            // Child
+            start_msgs = router.procnum - 2;
+            done_msgs = router.procnum - 2;
 
-			router.recent_pid = i;
+            router.recent_pid = i;
 
-			release_free_pipes(&router);
+            close_unused_pipes(&router);
 
-			fprintf(events_logf, log_started_fmt, router.recent_pid, getpid(), getppid());
-			fflush(events_logf);
-			printf(log_started_fmt, router.recent_pid, getpid(), getppid());
+            log.events_info(log_started_fmt, router.recent_pid, getpid(), getppid());
+            log.info(log_started_fmt, router.recent_pid, getpid(), getppid());
 
-			send_msg.s_header.s_type = STARTED;
-			sprintf(send_msg.s_payload, log_started_fmt, router.recent_pid, getpid(), getppid());
-			send_msg.s_header.s_payload_len = strlen(send_msg.s_payload);
-			send_multicast(&router, &send_msg);
+            send_msg.s_header.s_type = STARTED;
+            sprintf(send_msg.s_payload, log_started_fmt, router.recent_pid, getpid(), getppid());
+            send_msg.s_header.s_payload_len = strlen(send_msg.s_payload);
+            send_multicast(&router, &send_msg);
 
-			while(start_msgs) {
-				if(receive_any(&router, &rec_msg) == 0) {
-					if(rec_msg.s_header.s_type == STARTED)
-						start_msgs--;
-					if(rec_msg.s_header.s_type == DONE)
-						done_msgs--;
-				}
-			}
+            while (start_msgs) {
+                if (receive_any(&router, &rec_msg) == 0) {
+                    if (rec_msg.s_header.s_type == STARTED)
+                        start_msgs--;
+                    if (rec_msg.s_header.s_type == DONE)
+                        done_msgs--;
+                }
+            }
 
-			fprintf(events_logf, log_received_all_started_fmt, router.recent_pid);
-			fflush(events_logf);
-			printf(log_received_all_started_fmt, router.recent_pid);
+            log.events_info(log_received_all_started_fmt, router.recent_pid);
+            log.info(log_received_all_started_fmt, router.recent_pid);
 
-			fprintf(events_logf, log_done_fmt, router.recent_pid);
-			fflush(events_logf);
-			printf(log_done_fmt, router.recent_pid);
+            log.events_info(log_done_fmt, router.recent_pid);
+            log.info(log_done_fmt, router.recent_pid);
 
-			send_msg.s_header.s_type = DONE;
-			sprintf(send_msg.s_payload, log_done_fmt, router.recent_pid);
-			send_msg.s_header.s_payload_len = strlen(send_msg.s_payload);
-			send_multicast(&router, &send_msg);
+            send_msg.s_header.s_type = DONE;
+            sprintf(send_msg.s_payload, log_done_fmt, router.recent_pid);
+            send_msg.s_header.s_payload_len = strlen(send_msg.s_payload);
+            send_multicast(&router, &send_msg);
 
-			while(done_msgs) {
-				if(receive_any(&router, &rec_msg) == 0) {
-					if(rec_msg.s_header.s_type == DONE)
-						done_msgs--;
-				}
-			}
+            while (done_msgs) {
+                if (receive_any(&router, &rec_msg) == 0) {
+                    if (rec_msg.s_header.s_type == DONE)
+                        done_msgs--;
+                }
+            }
 
-			fprintf(events_logf, log_received_all_done_fmt, router.recent_pid);
-			fflush(events_logf);
-			printf(log_received_all_done_fmt, router.recent_pid);
+            log.events_info(log_received_all_done_fmt, router.recent_pid);
+            log.info(log_received_all_done_fmt, router.recent_pid);
 
-			fclose(events_logf);
-			exit(0);
-		}
-	}
+            exit(0);
+        }
+    }
 
-	release_free_pipes(&router);
+    close_unused_pipes(&router);
 
-		start_msgs = router.procnum - 1;
-		done_msgs = router.procnum - 1;
+    start_msgs = router.procnum - 1;
+    done_msgs = router.procnum - 1;
 
-		while(start_msgs) {
-			if(receive_any(&router, &rec_msg) == 0) {
-				if(rec_msg.s_header.s_type == STARTED)
-					start_msgs--;
-				if(rec_msg.s_header.s_type == DONE)
-					done_msgs--;
-			}
-		}
+    while (start_msgs) {
+        if (receive_any(&router, &rec_msg) == 0) {
+            if (rec_msg.s_header.s_type == STARTED)
+                start_msgs--;
+            if (rec_msg.s_header.s_type == DONE)
+                done_msgs--;
+        }
+    }
 
-		fprintf(events_logf, log_received_all_started_fmt, router.recent_pid);
-		fflush(events_logf);
-		printf(log_received_all_started_fmt, router.recent_pid);
+    log.events_info(log_received_all_started_fmt, router.recent_pid);
+    log.info(log_received_all_started_fmt, router.recent_pid);
 
-		while(done_msgs) {
-			if(receive_any(&router, &rec_msg) == 0) {
-				if(rec_msg.s_header.s_type == DONE)
-					done_msgs--;
-			}
-		}
+    while (done_msgs) {
+        if (receive_any(&router, &rec_msg) == 0) {
+            if (rec_msg.s_header.s_type == DONE)
+                done_msgs--;
+        }
+    }
 
-		fprintf(events_logf, log_received_all_done_fmt, router.recent_pid);
-		fflush(events_logf);
-		printf(log_received_all_done_fmt, router.recent_pid);
+    log.events_info(log_received_all_done_fmt, router.recent_pid);
+    log.info(log_received_all_done_fmt, router.recent_pid);
+    // Дожидаемся завершения всех дочерних процессов
+    while (1) {
+        int status;
+        pid_t done = wait(&status);
+        if (done == -1) {
+            if (errno == ECHILD) {
+                break;
+            }
+        } else {
+            TEST(!WIFEXITED(status) || WEXITSTATUS(status) != 0, "Can't wait child");
+        }
+    }
 
-		fclose(events_logf);
+    void release_log();
 
-		for(int i = 0; i < router.procnum; i++) {
-			wait(&i);
-		}
-
-		return 0;
-
-	return 0;
+    return 0;
 }

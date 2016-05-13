@@ -1,27 +1,30 @@
 #pragma once
 
-int release_free_pipes(void * data) {
-  Router *rt = (Router*)data;
+#include "router.h"
 
-	for(int i = 0; i < rt->procnum; i++) {
-		for(int j = 0; j < rt->procnum; j++) {
-			if(i == j)
-				continue;
+int close_unused_pipes(void * data) {
+    Router *rt = (Router*)data;
 
-			if(i == rt->recent_pid) {
-				close(rt->routes[rt->recent_pid][j].filedes[1]);
-				continue;
-			}
+    for(int i = 0; i < rt->procnum; i++) {
+        for(int j = 0; j < rt->procnum; j++) {
+            if(i == j) {
+                continue;
+            }
 
-			if(i != rt->recent_pid && j != rt->recent_pid) {
-				close(rt->routes[i][j].filedes[1]);
-				close(rt->routes[i][j].filedes[0]);
-				continue;
-			}
+            if(i == rt->recent_pid) {
+                close(rt->routes[rt->recent_pid][j].filedes[OUT]);
+                continue;
+            }
 
-			close(rt->routes[i][j].filedes[0]);
-		}
-	}
+            if(i != rt->recent_pid && j != rt->recent_pid) {
+                close(rt->routes[i][j].filedes[OUT]);
+                close(rt->routes[i][j].filedes[IN]);
+                continue;
+            }
 
-	return 0;
+            close(rt->routes[i][j].filedes[IN]);
+        }
+    }
+
+    return 0;
 }
