@@ -8,9 +8,7 @@
 static const int8_t IN = 0;
 static const int8_t OUT = 1;
 
-typedef struct {
-    int filedes[2];
-} pipe_t;
+typedef int pipe_t[2];
 
 typedef struct  {
     int procnum;

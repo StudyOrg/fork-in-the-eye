@@ -10,15 +10,14 @@
 #include <fcntl.h>
 #include <string.h>
 #include <wait.h>
-#include <time.h>
 
 #include "log.h"
 #include "ipc.h"
 #include "common.h"
 #include "pa2345.h"
-#include "main.h"
 #include "banking.h"
 #include "pipes_util.h"
+#include "util.h"
 #include "router.h"
 
 void doChild(void *, int, int);
@@ -26,16 +25,13 @@ void doChild(void *, int, int);
 int main(int argc, char *argv[]) {
     init_log();
 
-    int pid;
-    Router data;
-    int start_msgs, done_msgs;
-
     TEST(argc < 4, "Usage: pa2 -p N [S1...SN]");
 
-    int c;
-    opterr=0;
-    while((c = getopt(argc, argv, "p:")) != -1) {
-        switch (c) {
+    Router data;
+
+    int option;
+    while((option = getopt(argc, argv, "p:")) != -1) {
+        switch (option) {
         case 'p':
             data.procnum = atoi(optarg) + 1;
             break;
@@ -48,19 +44,22 @@ int main(int argc, char *argv[]) {
     argc -= optind;
     argv += optind;
 
+    int pid;
+    int start_msgs, done_msgs;
+
     data.recent_pid = 0;
 
     for(int i = 0; i < data.procnum; i++) {
         for(int j = 0; j < data.procnum; j++) {
             if(j==i) {
-                data.routes[i][j].filedes[IN] = -1;
-                data.routes[i][j].filedes[OUT] = -1;
+                data.routes[i][j][IN] = -1;
+                data.routes[i][j][OUT] = -1;
             } else {
-                int pipe_status = pipe(data.routes[i][j].filedes);
+                int pipe_status = pipe(data.routes[i][j]);
                 TEST(pipe_status < 0, "Can't create pipe");
 
-                set_nonlock(data.routes[i][j].filedes[IN]);
-                set_nonlock(data.routes[i][j].filedes[OUT]);
+                set_nonlock(data.routes[i][j][IN]);
+                set_nonlock(data.routes[i][j][OUT]);
 
                 log.pipes_info("The pipe %d ===> %d was created\n", j, i);
             }
@@ -103,7 +102,7 @@ int main(int argc, char *argv[]) {
     printf(log_received_all_started_fmt, tm, data.recent_pid);
     log.events_info(log_received_all_started_fmt, tm, data.recent_pid);
 
-    bank_robbery(&data,data.procnum-1);
+    bank_robbery(&data, data.procnum-1);
 
     msg.s_header.s_type = STOP;
     msg.s_header.s_payload_len = 0;
@@ -139,8 +138,16 @@ int main(int argc, char *argv[]) {
 
     print_history(&allHistory);
 
-    for(int i = 0; i < data.procnum; i++) {
-        wait(NULL);
+    while (1) {
+        int status;
+        pid_t done = wait(&status);
+        if (done == -1) {
+            if (errno == ECHILD) {
+                break;
+            }
+        } else {
+            TEST(!WIFEXITED(status) || WEXITSTATUS(status) != 0, "Can't wait child");
+        }
     }
 
     release_log();

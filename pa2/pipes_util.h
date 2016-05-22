@@ -12,24 +12,19 @@ int close_unused_pipes(void * data) {
             }
 
             if(i == rt->recent_pid) {
-                close(rt->routes[rt->recent_pid][j].filedes[OUT]);
+                close(rt->routes[rt->recent_pid][j][OUT]);
                 continue;
             }
 
             if(i != rt->recent_pid && j != rt->recent_pid) {
-                close(rt->routes[i][j].filedes[OUT]);
-                close(rt->routes[i][j].filedes[IN]);
+                close(rt->routes[i][j][OUT]);
+                close(rt->routes[i][j][IN]);
                 continue;
             }
 
-            close(rt->routes[i][j].filedes[IN]);
+            close(rt->routes[i][j][IN]);
         }
     }
 
     return 0;
-}
-
-void set_nonlock(int fileno) {
-    int mode = fcntl(fileno, F_GETFL);
-    fcntl(fileno, F_SETFL, mode | O_NONBLOCK);
 }

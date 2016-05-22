@@ -1,15 +1,6 @@
 #pragma once
 
-#include <time.h>
-
-int receive_sleep() {
-    struct timespec tmr;
-    tmr.tv_sec = 0;
-    tmr.tv_nsec = 50000000;
-
-    if(nanosleep(&tmr, NULL) < 0 ) {
-        return -1;
-    }
-
-    return 0;
-}
+/* Функция, переводящая функцию приема сообщения в сон */
+int receive_sleep();
+/* Установить статус "неблокирующий" для файла */
+void set_nonlock(int);
