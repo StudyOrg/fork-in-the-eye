@@ -1,6 +1,30 @@
-#pragma once
+#include "util.h"
+
+#include "stdversion.h"
+
+#include <time.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <fcntl.h>
 
 #include "router.h"
+
+int receive_sleep() {
+    struct timespec tmr;
+    tmr.tv_sec = 0;
+    tmr.tv_nsec = 50000000;
+
+    if(nanosleep(&tmr, NULL) < 0 ) {
+        return -1;
+    }
+
+    return 0;
+}
+
+void set_nonlock(int fileno) {
+    int mode = fcntl(fileno, F_GETFL);
+    fcntl(fileno, F_SETFL, mode | O_NONBLOCK);
+}
 
 int close_unused_pipes(void * data) {
     Router *rt = (Router*)data;

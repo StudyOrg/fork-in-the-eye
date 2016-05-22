@@ -1,10 +1,7 @@
 #include "ipc.h"
 
-#include <stdlib.h>
-#include <sys/types.h>
+#include <unistd.h>
 
-#include "common.h"
-#include "main.h"
 #include "router.h"
 #include "util.h"
 
