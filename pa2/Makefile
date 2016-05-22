@@ -14,7 +14,7 @@ clean:
 	rm -f *.o $(TARGET) *.log $(PACK)
 
 format:
-	astyle *.c log.h pipes_util.h router.h --style=java -s4 -n
+	astyle *.c log.h pipes_util.h router.h util.h --style=java -s4 -n
 
 pack: clean format
 	mkdir $(TARGET) && cp *.c *.h *.so $(TARGET)/ && tar -zcvf $(PACK) $(TARGET)/ && rm -rf $(TARGET)/

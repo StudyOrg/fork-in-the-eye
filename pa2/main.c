@@ -12,99 +12,82 @@
 #include <wait.h>
 #include <time.h>
 
+#include "log.h"
 #include "ipc.h"
 #include "common.h"
 #include "pa2345.h"
 #include "main.h"
 #include "banking.h"
+#include "pipes_util.h"
+#include "router.h"
 
-
-void usage();
-int closeUnusedPipes(void *);
-void doChild(void *, FILE *, int, int);
+void doChild(void *, int, int);
 
 int main(int argc, char *argv[]) {
-    int pid;
-    struct dataIO_t data;
-    int start_msgs, done_msgs;
-    FILE *fd_pipes, *fd_events;
+    init_log();
 
-    if(argc < 2)
-        usage();
+    int pid;
+    Router data;
+    int start_msgs, done_msgs;
+
+    TEST(argc < 4, "Usage: pa2 -p N [S1...SN]");
 
     int c;
     opterr=0;
     while((c = getopt(argc, argv, "p:")) != -1) {
         switch (c) {
         case 'p':
-            data.processes = atoi(optarg)+1;
+            data.procnum = atoi(optarg) + 1;
             break;
         case '?':
         default:
-            usage();
+            DIE("Bad parametes");
         }
     }
+
     argc -= optind;
     argv += optind;
 
-    data.lid = 0;
+    data.recent_pid = 0;
 
-    if ((fd_pipes = fopen(pipes_log, "w")) == NULL) {
-        fprintf(stderr, "Error opening the file %s\n", pipes_log);
-        exit(1);
-    }
-
-    for(int i = 0; i < data.processes; i++) {
-        for(int j = 0; j < data.processes; j++) {
+    for(int i = 0; i < data.procnum; i++) {
+        for(int j = 0; j < data.procnum; j++) {
             if(j==i) {
-                data.pipes[i][j].rdwr[0] = -1;
-                data.pipes[i][j].rdwr[1] = -1;
+                data.routes[i][j].filedes[IN] = -1;
+                data.routes[i][j].filedes[OUT] = -1;
             } else {
-                if(pipe(data.pipes[i][j].rdwr) < 0) {
-                    fprintf(stderr, "Error creating the pipe\n");
-                    exit(1);
-                }
+                int pipe_status = pipe(data.routes[i][j].filedes);
+                TEST(pipe_status < 0, "Can't create pipe");
 
-                int mode;
-                mode = fcntl(data.pipes[i][j].rdwr[0], F_GETFL);
-                fcntl(data.pipes[i][j].rdwr[0], F_SETFL, mode | O_NONBLOCK);
+                set_nonlock(data.routes[i][j].filedes[IN]);
+                set_nonlock(data.routes[i][j].filedes[OUT]);
 
-                mode = fcntl(data.pipes[i][j].rdwr[1], F_GETFL);
-                fcntl(data.pipes[i][j].rdwr[1], F_SETFL, mode | O_NONBLOCK);
-
-                fprintf(fd_pipes, "The pipe %d ===> %d was created\n", j, i);
+                log.pipes_info("The pipe %d ===> %d was created\n", j, i);
             }
         }
     }
-
-    fclose(fd_pipes);
 
     Message msg, resMsg;
     msg.s_header.s_magic = MESSAGE_MAGIC;
     msg.s_header.s_local_time = 0;
 
-    if ((fd_events = fopen(events_log, "a")) == NULL) {
-        fprintf(stderr, "Error opening the file %s\n", events_log);
-        exit(1);
-    }
-
-    for(int i = 1; i < data.processes; i++) {
+    for(int i = 1; i < data.procnum; i++) {
         pid = fork();
 
         if(pid < 0) {
             fprintf(stderr, "Error creating the child\n");
             exit(1);
         } else if (pid == 0) {
-            doChild(&data, fd_events, i, atoi(argv[i-1]));
+            doChild(&data, i, atoi(argv[i-1]));
             exit(0);
         }
     }
 
-    closeUnusedPipes(&data);
+    close_unused_pipes(&data);
 
     timestamp_t tm = get_physical_time();
-    start_msgs = data.processes - 1;
-    done_msgs = data.processes - 1;
+    start_msgs = data.procnum - 1;
+    done_msgs = data.procnum - 1;
 
     while(start_msgs) {
         if(receive_any(&data, &resMsg) == 0) {
@@ -117,11 +100,10 @@ int main(int argc, char *argv[]) {
 
     tm = get_physical_time();
 
-    fprintf(fd_events, log_received_all_started_fmt, tm, data.lid);
-    fflush(fd_events);
-    printf(log_received_all_started_fmt, tm, data.lid);
+    printf(log_received_all_started_fmt, tm, data.recent_pid);
+    log.events_info(log_received_all_started_fmt, tm, data.recent_pid);
 
-    bank_robbery(&data,data.processes-1);
+    bank_robbery(&data,data.procnum-1);
 
     msg.s_header.s_type = STOP;
     msg.s_header.s_payload_len = 0;
@@ -136,11 +118,10 @@ int main(int argc, char *argv[]) {
 
     tm = get_physical_time();
 
-    fprintf(fd_events, log_received_all_done_fmt, tm, data.lid);
-    fflush(fd_events);
-    printf(log_received_all_done_fmt, tm, data.lid);
+    printf(log_received_all_done_fmt, tm, data.recent_pid);
+    log.events_info(log_received_all_done_fmt, tm, data.recent_pid);
 
-    int history_msgs = data.processes - 1;
+    int history_msgs = data.procnum - 1;
     AllHistory allHistory;
     allHistory.s_history_len = history_msgs;
 
@@ -158,24 +139,24 @@ int main(int argc, char *argv[]) {
 
     print_history(&allHistory);
 
-    fclose(fd_events);
-
-    for(int i = 0; i < data.processes; i++) {
+    for(int i = 0; i < data.procnum; i++) {
         wait(NULL);
     }
+
+    release_log();
 
     return 0;
 }
 
-void doChild(void *parentData, FILE *fd_events, int lid, int initBalance) {
-    struct dataIO_t* data = parentData;
+void doChild(void *parentData, int recent_pid, int initBalance) {
+    Router *data = (Router*)parentData;
 
-    data->lid = lid;
-    int done_msgs = data->processes - 2;
+    data->recent_pid = recent_pid;
+    int done_msgs = data->procnum - 2;
     Message msg, resMsg;
 
     BalanceHistory history;
-    history.s_id = lid;
+    history.s_id = recent_pid;
     history.s_history_len = 0;
 
     timestamp_t tm = get_physical_time();
@@ -186,11 +167,10 @@ void doChild(void *parentData, FILE *fd_events, int lid, int initBalance) {
     history.s_history[history.s_history_len].s_time = tm;
     history.s_history[history.s_history_len].s_balance_pending_in = 0;
 
-    closeUnusedPipes(data);
+    close_unused_pipes(data);
 
-    fprintf(fd_events, log_started_fmt, tm, history.s_id, getpid(), getppid(),
-            history.s_history[history.s_history_len].s_balance);
-    fflush(fd_events);
+    log.events_info(log_started_fmt, tm, history.s_id, getpid(), getppid(),
+                    history.s_history[history.s_history_len].s_balance);
     printf(log_started_fmt, tm, history.s_id, getpid(), getppid(),
            history.s_history[history.s_history_len].s_balance);
 
@@ -222,23 +202,20 @@ void doChild(void *parentData, FILE *fd_events, int lid, int initBalance) {
             }
             if(resMsg.s_header.s_type == STOP) {
                 msg.s_header.s_type = DONE;
-                sprintf(msg.s_payload, log_done_fmt, tm, data->lid, childBalance);
+                sprintf(msg.s_payload, log_done_fmt, tm, data->recent_pid, childBalance);
                 msg.s_header.s_payload_len = strlen(msg.s_payload);
                 send_multicast(data, &msg);
 
-                fprintf(fd_events, log_done_fmt, tm, data->lid, childBalance);
-                fflush(fd_events);
-                printf(log_done_fmt, tm, data->lid, childBalance);
+                log.events_info(log_done_fmt, tm, data->recent_pid, childBalance);
+                printf(log_done_fmt, tm, data->recent_pid, childBalance);
             }
             if(resMsg.s_header.s_type == TRANSFER) {
                 TransferOrder order;
                 memcpy(&order, resMsg.s_payload, resMsg.s_header.s_payload_len);
 
-                if(order.s_src == data->lid) {
-                    fprintf(fd_events, log_transfer_out_fmt, tm, data->lid,
-                            order.s_amount, order.s_dst);
-                    fflush(fd_events);
-                    printf(log_transfer_out_fmt, tm, data->lid, order.s_amount,
+                if(order.s_src == data->recent_pid) {
+                    log.events_info(log_transfer_out_fmt, tm, data->recent_pid, order.s_amount, order.s_dst);
+                    printf(log_transfer_out_fmt, tm, data->recent_pid, order.s_amount,
                            order.s_dst);
                     send(data, order.s_dst, &resMsg);
 
@@ -251,11 +228,9 @@ void doChild(void *parentData, FILE *fd_events, int lid, int initBalance) {
 
                     history.s_history[history.s_history_len] = balance;
                 }
-                if(order.s_dst == data->lid) {
-                    fprintf(fd_events, log_transfer_in_fmt, tm, data->lid,
-                            order.s_amount, order.s_src);
-                    fflush(fd_events);
-                    printf(log_transfer_in_fmt, tm, data->lid, order.s_amount,
+                if(order.s_dst == data->recent_pid) {
+                    log.events_info(log_transfer_in_fmt, tm, data->recent_pid, order.s_amount, order.s_src);
+                    printf(log_transfer_in_fmt, tm, data->recent_pid, order.s_amount,
                            order.s_src);
 
                     childBalance += order.s_amount;
@@ -289,8 +264,6 @@ void doChild(void *parentData, FILE *fd_events, int lid, int initBalance) {
     memcpy(msg.s_payload, &history, sizeof(history));
 
     send(data, 0, &msg);
-
-    fclose(fd_events);
 }
 
 void transfer(void * parent_data, local_id src, local_id dst,
@@ -315,31 +288,4 @@ void transfer(void * parent_data, local_id src, local_id dst,
                 break;
         }
     }
-}
-
-int closeUnusedPipes(void * self) {
-    struct dataIO_t* data = self;
-    for(int i = 0; i < data->processes; i++) {
-
-        for(int j = 0; j < data->processes; j++) {
-            if(i == j)
-                continue;
-            if(i == data->lid) {
-                close(data->pipes[data->lid][j].rdwr[1]);
-                continue;
-            }
-            if(i != data->lid && j != data->lid) {
-                close(data->pipes[i][j].rdwr[1]);
-                close(data->pipes[i][j].rdwr[0]);
-                continue;
-            }
-            close(data->pipes[i][j].rdwr[0]);
-        }
-    }
-    return 0;
-}
-
-void usage() {
-    printf("usage: pa1 -p num\n");
-    exit(1);
 }
