@@ -1,7 +1,9 @@
 #pragma once
 
+#define forever while(1)
+
 /* Функция, переводящая функцию приема сообщения в сон */
-int receive_sleep();
+void receive_sleep();
 /* Установить статус "неблокирующий" для файла */
 void set_nonlock(int);
 /* Закрыть неиспользуемые каналы */

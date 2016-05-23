@@ -9,16 +9,9 @@
 
 #include "router.h"
 
-int receive_sleep() {
-    struct timespec tmr;
-    tmr.tv_sec = 0;
-    tmr.tv_nsec = 50000000;
-
-    if(nanosleep(&tmr, NULL) < 0 ) {
-        return -1;
-    }
-
-    return 0;
+void receive_sleep() {
+    struct timespec nanodelay = {0, 25000000};
+    nanosleep(&nanodelay, NULL);
 }
 
 void set_nonlock(int fileno) {

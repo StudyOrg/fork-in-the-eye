@@ -5,7 +5,7 @@
 #include "router.h"
 #include "util.h"
 
-int send(void * data, local_id dst, const Message * msg) {
+int send(void *data, local_id dst, const Message * msg) {
     Router *rt = (Router*)data;
     size_t size = sizeof(msg->s_header) + msg->s_header.s_payload_len;
 
@@ -18,7 +18,7 @@ int send(void * data, local_id dst, const Message * msg) {
     return 0;
 }
 
-int send_multicast(void * data, const Message * msg) {
+int send_multicast(void *data, const Message * msg) {
     Router *rt = (Router*)data;
 
     for(int i = 0; i < rt->procnum; i++) {
@@ -32,7 +32,7 @@ int send_multicast(void * data, const Message * msg) {
     return 0;
 }
 
-int receive(void * data, local_id from, Message * msg) {
+int receive(void *data, local_id from, Message * msg) {
     Router *rt = (Router*)data;
     size_t size = sizeof(msg->s_header);
 
@@ -51,7 +51,7 @@ int receive(void * data, local_id from, Message * msg) {
     return 0;
 }
 
-int receive_any(void * data, Message * msg) {
+int receive_any(void *data, Message * msg) {
     Router *rt = (Router*)data;
 
     for(int i = 0; i < rt->procnum; i++) {

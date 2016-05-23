@@ -19,84 +19,106 @@ void service_account(void *parentData, int recent_pid, int initBalance) {
 
     data->recent_pid = recent_pid;
     int done_msgs = data->procnum - 2;
-    Message msg, resMsg;
 
     BalanceHistory history;
     history.s_id = recent_pid;
     history.s_history_len = 0;
 
-    timestamp_t tm = get_physical_time();
+    BalanceState *st = &history.s_history[history.s_history_len];
+
+    timestamp_t pstamp = get_physical_time();
 
     balance_t childBalance = initBalance;
 
-    history.s_history[history.s_history_len].s_balance = childBalance;
-    history.s_history[history.s_history_len].s_time = tm;
-    history.s_history[history.s_history_len].s_balance_pending_in = 0;
+    st->s_balance = childBalance;
+    st->s_time = pstamp;
+    st->s_balance_pending_in = 0;
 
     close_unused_pipes(data);
 
-    events_info(log_started_fmt, tm, history.s_id, getpid(), getppid(),
-                history.s_history[history.s_history_len].s_balance);
-    printf(log_started_fmt, tm, history.s_id, getpid(), getppid(),
-           history.s_history[history.s_history_len].s_balance);
+    events_info(
+        log_started_fmt,
+        pstamp,
+        history.s_id,
+        getpid(), getppid(),
+        st->s_balance);
+
+    printf(
+        log_started_fmt,
+        pstamp,
+        history.s_id,
+        getpid(), getppid(),
+        st->s_balance);
+
+    Message msg;
 
     msg.s_header.s_type = STARTED;
     msg.s_header.s_magic = MESSAGE_MAGIC;
-    sprintf(msg.s_payload, log_started_fmt, tm, history.s_id, getpid(),
-            getppid(), history.s_history[history.s_history_len].s_balance);
+
+    sprintf(
+      msg.s_payload,
+      log_started_fmt,
+      pstamp,
+      history.s_id,
+      getpid(), getppid(),
+      st->s_balance);
+
     msg.s_header.s_payload_len = strlen(msg.s_payload);
+
     send(data, 0, &msg);
 
-    history.s_history_len ++;
+    ++history.s_history_len;
 
-    while(1 && done_msgs) {
-        tm = get_physical_time();
+    while(done_msgs != 0) {
+        pstamp = get_physical_time();
 
-        /*
-          Set balance for empty timestamps
-        */
         BalanceState balance;
         balance.s_balance_pending_in = 0;
         balance.s_balance = childBalance;
         balance.s_time = get_physical_time();
-        history.s_history[history.s_history_len] = balance;
-        history.s_history_len ++;
+        *st = balance;
+        ++history.s_history_len;
 
-        if(receive_any(data, &resMsg) == 0) {
-            if(resMsg.s_header.s_type == DONE) {
+        Message answer;
+
+        if(receive_any(data, &answer) == 0) {
+            if(answer.s_header.s_type == DONE) {
                 done_msgs--;
             }
-            if(resMsg.s_header.s_type == STOP) {
+
+            if(answer.s_header.s_type == STOP) {
                 msg.s_header.s_type = DONE;
-                sprintf(msg.s_payload, log_done_fmt, tm, data->recent_pid, childBalance);
+                sprintf(msg.s_payload, log_done_fmt, pstamp, data->recent_pid, childBalance);
                 msg.s_header.s_payload_len = strlen(msg.s_payload);
                 send_multicast(data, &msg);
 
-                events_info(log_done_fmt, tm, data->recent_pid, childBalance);
-                printf(log_done_fmt, tm, data->recent_pid, childBalance);
+                events_info(log_done_fmt, pstamp, data->recent_pid, childBalance);
+                printf(log_done_fmt, pstamp, data->recent_pid, childBalance);
             }
-            if(resMsg.s_header.s_type == TRANSFER) {
+
+            if(answer.s_header.s_type == TRANSFER) {
                 TransferOrder order;
-                memcpy(&order, resMsg.s_payload, resMsg.s_header.s_payload_len);
+                memcpy(&order, answer.s_payload, answer.s_header.s_payload_len);
 
                 if(order.s_src == data->recent_pid) {
-                    events_info(log_transfer_out_fmt, tm, data->recent_pid, order.s_amount, order.s_dst);
-                    printf(log_transfer_out_fmt, tm, data->recent_pid, order.s_amount,
+                    events_info(log_transfer_out_fmt, pstamp, data->recent_pid, order.s_amount, order.s_dst);
+                    printf(log_transfer_out_fmt, pstamp, data->recent_pid, order.s_amount,
                            order.s_dst);
-                    send(data, order.s_dst, &resMsg);
+                    send(data, order.s_dst, &answer);
 
                     childBalance -= order.s_amount;
 
                     BalanceState balance;
                     balance.s_balance_pending_in = 0;
                     balance.s_balance = childBalance;
-                    balance.s_time = tm;
+                    balance.s_time = pstamp;
 
                     history.s_history[history.s_history_len] = balance;
                 }
+
                 if(order.s_dst == data->recent_pid) {
-                    events_info(log_transfer_in_fmt, tm, data->recent_pid, order.s_amount, order.s_src);
-                    printf(log_transfer_in_fmt, tm, data->recent_pid, order.s_amount,
+                    events_info(log_transfer_in_fmt, pstamp, data->recent_pid, order.s_amount, order.s_src);
+                    printf(log_transfer_in_fmt, pstamp, data->recent_pid, order.s_amount,
                            order.s_src);
 
                     childBalance += order.s_amount;
@@ -104,13 +126,13 @@ void service_account(void *parentData, int recent_pid, int initBalance) {
                     BalanceState balance;
                     balance.s_balance_pending_in = 0;
                     balance.s_balance = childBalance;
-                    balance.s_time = tm;
+                    balance.s_time = pstamp;
 
                     history.s_history[history.s_history_len] = balance;
 
                     msg.s_header.s_type = ACK;
                     msg.s_header.s_magic = MESSAGE_MAGIC;
-                    msg.s_header.s_local_time = tm;
+                    msg.s_header.s_local_time = pstamp;
                     msg.s_header.s_payload_len = 0;
                     send(data, 0, &msg);
                 }
