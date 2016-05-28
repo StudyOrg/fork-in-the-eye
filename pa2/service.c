@@ -24,59 +24,45 @@ void service_account(void *parentData, int recent_pid, int initBalance) {
     history.s_id = recent_pid;
     history.s_history_len = 0;
 
-    BalanceState *st = &history.s_history[history.s_history_len];
-
     timestamp_t pstamp = get_physical_time();
 
     balance_t childBalance = initBalance;
 
-    st->s_balance = childBalance;
-    st->s_time = pstamp;
-    st->s_balance_pending_in = 0;
+    printf("hlen %d\n", history.s_history_len);
+    BalanceState *state = &(history.s_history[history.s_history_len]);
+
+    state->s_balance = childBalance;
+    state->s_time = pstamp;
+    state->s_balance_pending_in = 0;
 
     close_unused_pipes(data);
 
-    events_info(
-        log_started_fmt,
-        pstamp,
-        history.s_id,
-        getpid(), getppid(),
-        st->s_balance);
-
-    printf(
-        log_started_fmt,
-        pstamp,
-        history.s_id,
-        getpid(), getppid(),
-        st->s_balance);
+    events_info(log_started_fmt, pstamp, history.s_id, getpid(), getppid(),
+                state->s_balance);
+    printf(log_started_fmt, pstamp, history.s_id, getpid(), getppid(),
+           state->s_balance);
 
     Message msg;
 
     msg.s_header.s_type = STARTED;
     msg.s_header.s_magic = MESSAGE_MAGIC;
-
-    sprintf(
-      msg.s_payload,
-      log_started_fmt,
-      pstamp,
-      history.s_id,
-      getpid(), getppid(),
-      st->s_balance);
-
+    sprintf(msg.s_payload, log_started_fmt, pstamp, history.s_id, getpid(),
+            getppid(), state->s_balance);
     msg.s_header.s_payload_len = strlen(msg.s_payload);
-
     send(data, 0, &msg);
 
     ++history.s_history_len;
 
-    while(done_msgs != 0) {
+    while(1 && done_msgs) {
         pstamp = get_physical_time();
 
         BalanceState balance;
         balance.s_balance_pending_in = 0;
         balance.s_balance = childBalance;
         balance.s_time = get_physical_time();
-        *st = balance;
+        // history.s_history[history.s_history_len] = balance;
+        state++;
+        *state = balance;
         ++history.s_history_len;
 
         Message answer;
@@ -85,7 +71,6 @@ void service_account(void *parentData, int recent_pid, int initBalance) {
             if(answer.s_header.s_type == DONE) {
                 done_msgs--;
             }
-
             if(answer.s_header.s_type == STOP) {
                 msg.s_header.s_type = DONE;
                 sprintf(msg.s_payload, log_done_fmt, pstamp, data->recent_pid, childBalance);
@@ -95,7 +80,6 @@ void service_account(void *parentData, int recent_pid, int initBalance) {
                 events_info(log_done_fmt, pstamp, data->recent_pid, childBalance);
                 printf(log_done_fmt, pstamp, data->recent_pid, childBalance);
             }
-
             if(answer.s_header.s_type == TRANSFER) {
                 TransferOrder order;
                 memcpy(&order, answer.s_payload, answer.s_header.s_payload_len);
@@ -115,7 +99,6 @@ void service_account(void *parentData, int recent_pid, int initBalance) {
 
                     history.s_history[history.s_history_len] = balance;
                 }
-
                 if(order.s_dst == data->recent_pid) {
                     events_info(log_transfer_in_fmt, pstamp, data->recent_pid, order.s_amount, order.s_src);
                     printf(log_transfer_in_fmt, pstamp, data->recent_pid, order.s_amount,
