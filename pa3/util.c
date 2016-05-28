@@ -2,6 +2,7 @@
 
 #include "stdversion.h"
 
+#include <string.h>
 #include <time.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -44,4 +45,33 @@ int close_unused_pipes(void * data) {
     }
 
     return 0;
+}
+
+Message get_stop_message() {
+    Message m;
+    m.s_header.s_type = STOP;
+    m.s_header.s_payload_len = 0;
+
+    return m;
+}
+
+Message get_history_message(BalanceHistory h) {
+    Message m;
+    m.s_header.s_magic = MESSAGE_MAGIC;
+    m.s_header.s_type = BALANCE_HISTORY;
+    m.s_header.s_local_time = get_lamport_time();
+    m.s_header.s_payload_len = sizeof(BalanceHistory);
+    memcpy(m.s_payload, &h, sizeof(BalanceHistory));
+
+    return m;
+}
+
+Message get_ack_message() {
+    Message m;
+    m.s_header.s_type = ACK;
+    m.s_header.s_magic = MESSAGE_MAGIC;
+    m.s_header.s_local_time = get_lamport_time();
+    m.s_header.s_payload_len = 0;
+
+    return m;
 }

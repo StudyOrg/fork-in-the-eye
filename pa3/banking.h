@@ -78,13 +78,13 @@ void transfer(void * parent_data, local_id src, local_id dst, balance_t amount);
 /** Perform a number of transfers between various children with ids [1;max_id]
  *
  * @param parent_data   Any data structure implemented by students to perform I/O,
- *                      will be passed to transfer()
+ *                    lib32  will be passed to transfer()
  * @param max_id max    id of existing process, so that (max_id + 1) is the total
  *                      number of processes
  */
 void bank_robbery(void * parent_data, local_id max_id);
 
-/** 
+/**
  * Returs the value of Lamport's clock.
  */
 timestamp_t get_lamport_time();
@@ -96,7 +96,7 @@ timestamp_t get_lamport_time();
 timestamp_t get_physical_time();
 
 /** Pretty print for BalanceHistories.
- * 
+ *
  */
 void print_history(const AllHistory * history);
 

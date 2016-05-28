@@ -15,6 +15,7 @@
 #include "util.h"
 #include "router.h"
 #include "service.h"
+#include "lamport_time.h"
 
 int main(int argc, char *argv[]) {
     init_log();
@@ -51,7 +52,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    Message msg, resMsg;
+    Message msg, awaited_message;
     msg.s_header.s_magic = MESSAGE_MAGIC;
     msg.s_header.s_local_time = 0;
 
@@ -68,60 +69,67 @@ int main(int argc, char *argv[]) {
 
     close_unused_pipes(&data);
 
-    timestamp_t pstamp = get_physical_time();
+    timestamp_t lstamp = get_lamport_time();
 
     int start_messages_counter = data.procnum - 1;
     int done_messages_counter = data.procnum - 1;
 
     while(start_messages_counter) {
-        if(receive_any(&data, &resMsg) == 0) {
-            if(resMsg.s_header.s_type == STARTED)
+        if(receive_any(&data, &awaited_message) == 0) {
+            if(awaited_message.s_header.s_type == STARTED)
                 start_messages_counter--;
-            if(resMsg.s_header.s_type == DONE)
+            lamport_update(awaited_message.s_header.s_local_time);
+            lstamp = get_lamport_time();
+            if(awaited_message.s_header.s_type == DONE)
                 done_messages_counter--;
         }
     }
 
-    pstamp = get_physical_time();
+    lstamp = get_lamport_time();
 
-    printf(log_received_all_started_fmt, pstamp, data.recent_pid);
-    events_info(log_received_all_started_fmt, pstamp, data.recent_pid);
+    printf(log_received_all_started_fmt, lstamp, data.recent_pid);
+    events_info(log_received_all_started_fmt, lstamp, data.recent_pid);
 
     bank_robbery(&data, data.procnum - 1);
 
-    msg.s_header.s_type = STOP;
-    msg.s_header.s_payload_len = 0;
+    msg = get_stop_message();
+
     send_multicast(&data, &msg);
 
     while(done_messages_counter) {
-        if(receive_any(&data, &resMsg) == 0) {
-            if(resMsg.s_header.s_type == DONE)
+        if(receive_any(&data, &awaited_message) == 0) {
+            if(awaited_message.s_header.s_type == DONE)
                 done_messages_counter--;
+            lamport_update(awaited_message.s_header.s_local_time);
+            lstamp = get_lamport_time();
         }
     }
 
-    pstamp = get_physical_time();
+    lstamp = get_physical_time();
 
-    printf(log_received_all_done_fmt, pstamp, data.recent_pid);
-    events_info(log_received_all_done_fmt, pstamp, data.recent_pid);
+    printf(log_received_all_done_fmt, lstamp, data.recent_pid);
+    events_info(log_received_all_done_fmt, lstamp, data.recent_pid);
 
     int history_msgs = data.procnum - 1;
-    AllHistory allHistory;
-    allHistory.s_history_len = history_msgs;
+    AllHistory global_history;
+    global_history.s_history_len = history_msgs;
 
     do {
-        if(receive_any(&data, &resMsg) == 0) {
+        if(receive_any(&data, &awaited_message) == 0) {
             BalanceHistory hist;
-            memcpy(&hist, resMsg.s_payload, resMsg.s_header.s_payload_len);
+            memcpy(&hist, awaited_message.s_payload, awaited_message.s_header.s_payload_len);
 
-            if(resMsg.s_header.s_type == BALANCE_HISTORY) {
-                allHistory.s_history[hist.s_id-1] = hist;
+            if(awaited_message.s_header.s_type == BALANCE_HISTORY) {
+                global_history.s_history[hist.s_id-1] = hist;
                 history_msgs--;
+
+                lamport_update(awaited_message.s_header.s_local_time);
+                lstamp = get_lamport_time();
             }
         }
     } while(history_msgs);
 
-    print_history(&allHistory);
+    print_history(&global_history);
 
     while (1) {
         int status;
