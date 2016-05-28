@@ -76,36 +76,38 @@ int main(int argc, char *argv[]) {
 
     while(start_messages_counter) {
         if(receive_any(&data, &awaited_message) == 0) {
-            if(awaited_message.s_header.s_type == STARTED)
+            if(awaited_message.s_header.s_type == STARTED) {
                 start_messages_counter--;
-            lamport_update(awaited_message.s_header.s_local_time);
-            lstamp = get_lamport_time();
-            if(awaited_message.s_header.s_type == DONE)
+                lamport_update(awaited_message.s_header.s_local_time);
+                lstamp = get_lamport_time();
+            }
+
+            if(awaited_message.s_header.s_type == DONE) {
                 done_messages_counter--;
+            }
         }
     }
-
-    lstamp = get_lamport_time();
 
     printf(log_received_all_started_fmt, lstamp, data.recent_pid);
     events_info(log_received_all_started_fmt, lstamp, data.recent_pid);
 
     bank_robbery(&data, data.procnum - 1);
 
-    msg = get_stop_message();
-
+    lstamp = get_lamport_time();
+    msg.s_header.s_type = STOP;
+    msg.s_header.s_payload_len = 0;
+    msg.s_header.s_local_time = lstamp;
     send_multicast(&data, &msg);
 
     while(done_messages_counter) {
         if(receive_any(&data, &awaited_message) == 0) {
-            if(awaited_message.s_header.s_type == DONE)
+            if(awaited_message.s_header.s_type == DONE) {
                 done_messages_counter--;
-            lamport_update(awaited_message.s_header.s_local_time);
-            lstamp = get_lamport_time();
+                lamport_update(awaited_message.s_header.s_local_time);
+                lstamp = get_lamport_time();
+            }
         }
     }
-
-    lstamp = get_physical_time();
 
     printf(log_received_all_done_fmt, lstamp, data.recent_pid);
     events_info(log_received_all_done_fmt, lstamp, data.recent_pid);
@@ -131,7 +133,7 @@ int main(int argc, char *argv[]) {
 
     print_history(&global_history);
 
-    while (1) {
+    forever {
         int status;
         pid_t done = wait(&status);
         if (done == -1) {

@@ -11,9 +11,3 @@ void receive_sleep();
 void set_nonlock(int);
 /* Закрыть неиспользуемые каналы */
 int close_unused_pipes(void *);
-
-Message get_stop_message();
-
-Message get_history_message(BalanceHistory);
-
-Message get_ack_message();

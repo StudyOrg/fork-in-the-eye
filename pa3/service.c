@@ -15,7 +15,9 @@
 #include "router.h"
 #include "lamport_time.h"
 
-void service_account(void *global_data, int recent_pid, int initBalance) {
+#define HISTORY history.s_history[history.s_history_len]
+
+void service_account(void *global_data, int recent_pid, int global_balance) {
     Router *data = (Router*)global_data;
 
     data->recent_pid = recent_pid;
@@ -28,35 +30,35 @@ void service_account(void *global_data, int recent_pid, int initBalance) {
     timestamp_t lstamp = lamport_global_stamp;
     timestamp_t lstamp_mem = lstamp;
 
-    balance_t local_balance = initBalance;
+    balance_t local_balance = global_balance;
 
-    BalanceState *state = &(history.s_history[history.s_history_len]);
-
-    state->s_balance = local_balance;
-    state->s_time = lstamp;
-    state->s_balance_pending_in = 0;
+    HISTORY.s_balance = local_balance;
+    HISTORY.s_time = lstamp;
+    HISTORY.s_balance_pending_in = 0;
 
     close_unused_pipes(data);
 
-    events_info(log_started_fmt, lstamp, history.s_id, getpid(), getppid(),
-                state->s_balance);
-    printf(log_started_fmt, lstamp, history.s_id, getpid(), getppid(),
-           state->s_balance);
+    events_info(log_started_fmt, lstamp, history.s_id, getpid(), getppid(), HISTORY.s_balance);
+    printf(log_started_fmt, lstamp, history.s_id, getpid(), getppid(), HISTORY.s_balance);
 
     Message msg;
 
     lstamp = get_lamport_time();
     msg.s_header.s_type = STARTED;
     msg.s_header.s_magic = MESSAGE_MAGIC;
-    sprintf(msg.s_payload, log_started_fmt, lstamp, history.s_id, getpid(),
-            getppid(), state->s_balance);
-    msg.s_header.s_payload_len = strlen(msg.s_payload);
     msg.s_header.s_local_time = lstamp;
+    sprintf(msg.s_payload, log_started_fmt, lstamp, history.s_id, getpid(), getppid(), HISTORY.s_balance);
+    msg.s_header.s_payload_len = strlen(msg.s_payload);
 
     send(data, 0, &msg);
 
     ++history.s_history_len;
-    ++state;
+
+    HISTORY.s_balance = local_balance;
+    HISTORY.s_time = lstamp;
+    HISTORY.s_balance_pending_in = 0;
+
+    ++history.s_history_len;
 
     Message answer;
 
@@ -66,7 +68,7 @@ void service_account(void *global_data, int recent_pid, int initBalance) {
                 lamport_update(answer.s_header.s_local_time);
                 lstamp = get_lamport_time();
 
-                done_msgs--;
+                --done_msgs;
             }
 
             else if(answer.s_header.s_type == TRANSFER) {
@@ -74,10 +76,11 @@ void service_account(void *global_data, int recent_pid, int initBalance) {
                     timestamp_t buf = lstamp_mem + 1;
                     while(buf != answer.s_header.s_local_time + 1) {
                         BalanceState balance;
+
                         balance.s_balance_pending_in = 0;
                         balance.s_balance = local_balance;
                         balance.s_time = buf;
-                        history.s_history[history.s_history_len] = balance;
+                        HISTORY = balance;
                         ++history.s_history_len;
 
                         ++buf;
@@ -92,10 +95,11 @@ void service_account(void *global_data, int recent_pid, int initBalance) {
 
                 if(order.s_src == data->recent_pid) {
                     BalanceState balance;
+
                     balance.s_balance_pending_in = 0;
                     balance.s_balance = local_balance;
                     balance.s_time = lstamp;
-                    history.s_history[history.s_history_len] = balance;
+                    HISTORY = balance;
                     ++history.s_history_len;
 
                     lstamp = get_lamport_time();
@@ -115,7 +119,7 @@ void service_account(void *global_data, int recent_pid, int initBalance) {
 
                     lstamp_mem = lstamp;
 
-                    history.s_history[history.s_history_len] = balance;
+                    HISTORY = balance;
                     ++history.s_history_len;
                 }
 
@@ -127,7 +131,8 @@ void service_account(void *global_data, int recent_pid, int initBalance) {
                     balance.s_balance_pending_in = 0;
                     balance.s_balance = local_balance;
                     balance.s_time = lstamp;
-                    history.s_history[history.s_history_len] = balance;
+
+                    HISTORY = balance;
                     ++history.s_history_len;
 
                     local_balance += order.s_amount;
@@ -138,10 +143,14 @@ void service_account(void *global_data, int recent_pid, int initBalance) {
 
                     lstamp_mem = lstamp;
 
-                    history.s_history[history.s_history_len] = balance;
-                    history.s_history_len ++;
+                    HISTORY = balance;
+                    ++history.s_history_len;
 
-                    msg = get_ack_message();
+                    lstamp = get_lamport_time();
+                    msg.s_header.s_type = ACK;
+                    msg.s_header.s_magic = MESSAGE_MAGIC;
+                    msg.s_header.s_local_time = lstamp;
+                    msg.s_header.s_payload_len = 0;
 
                     send(data, 0, &msg);
                 }
@@ -151,6 +160,8 @@ void service_account(void *global_data, int recent_pid, int initBalance) {
                 lamport_update(answer.s_header.s_local_time);
 
                 lstamp = get_lamport_time();
+                lstamp = get_lamport_time();
+
                 msg.s_header.s_type = DONE;
                 sprintf(msg.s_payload, log_done_fmt, lstamp, data->recent_pid, local_balance);
                 msg.s_header.s_payload_len = strlen(msg.s_payload);
@@ -165,12 +176,14 @@ void service_account(void *global_data, int recent_pid, int initBalance) {
 
     if(answer.s_header.s_local_time >= lstamp_mem) {
         timestamp_t buf = lstamp_mem + 1;
+
         while(buf != answer.s_header.s_local_time) {
             BalanceState balance;
             balance.s_balance_pending_in = 0;
             balance.s_balance = local_balance;
             balance.s_time = buf;
-            history.s_history[history.s_history_len] = balance;
+
+            HISTORY = balance;
             ++history.s_history_len;
 
             ++buf;
@@ -179,7 +192,12 @@ void service_account(void *global_data, int recent_pid, int initBalance) {
 
     receive_sleep();
 
-    msg = get_history_message(history);
+    lstamp = get_lamport_time();
+    msg.s_header.s_magic = MESSAGE_MAGIC;
+    msg.s_header.s_type = BALANCE_HISTORY;
+    msg.s_header.s_local_time = lstamp;
+    msg.s_header.s_payload_len = sizeof(history);
+    memcpy(msg.s_payload, &history, sizeof(history));
 
     send(data, 0, &msg);
 }

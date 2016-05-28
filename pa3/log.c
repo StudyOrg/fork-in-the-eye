@@ -43,7 +43,7 @@ void init_log() {
     log.pipes_file = fopen(pipes_log, "w");
     TEST(log.pipes_file == NULL, "Can't open pipes log file");
 
-    log.events_file = fopen(events_log, "w");
+    log.events_file = fopen(events_log, "a");
     TEST(log.events_file == NULL, "Can't open events log file");
 }
 

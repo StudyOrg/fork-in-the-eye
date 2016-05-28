@@ -1,8 +1,6 @@
 #include "banking.h"
 #include "lamport_time.h"
 
-volatile timestamp_t lamport_global_stamp = 0;
-
 timestamp_t get_lamport_time() {
     ++lamport_global_stamp;
     return lamport_global_stamp;

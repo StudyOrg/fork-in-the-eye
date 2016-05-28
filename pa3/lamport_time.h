@@ -1,5 +1,5 @@
 #pragma once
 
-extern volatile timestamp_t lamport_global_stamp;
+static timestamp_t lamport_global_stamp = 0;
 
 void lamport_update(timestamp_t);

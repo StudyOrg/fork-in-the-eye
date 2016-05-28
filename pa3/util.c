@@ -9,6 +9,7 @@
 #include <fcntl.h>
 
 #include "router.h"
+#include "ipc.h"
 
 void receive_sleep() {
     struct timespec nanodelay = {0, 25000000};
@@ -47,30 +48,31 @@ int close_unused_pipes(void * data) {
     return 0;
 }
 
-Message get_stop_message() {
+Message get_stop_message(timestamp_t t) {
     Message m;
     m.s_header.s_type = STOP;
     m.s_header.s_payload_len = 0;
+    m.s_header.s_local_time = t;
 
     return m;
 }
 
-Message get_history_message(BalanceHistory h) {
+Message get_history_message(BalanceHistory h, timestamp_t t) {
     Message m;
-    m.s_header.s_magic = MESSAGE_MAGIC;
     m.s_header.s_type = BALANCE_HISTORY;
-    m.s_header.s_local_time = get_lamport_time();
+    m.s_header.s_magic = MESSAGE_MAGIC;
+    m.s_header.s_local_time = t;
     m.s_header.s_payload_len = sizeof(BalanceHistory);
     memcpy(m.s_payload, &h, sizeof(BalanceHistory));
 
     return m;
 }
 
-Message get_ack_message() {
+Message get_ack_message(timestamp_t t) {
     Message m;
     m.s_header.s_type = ACK;
     m.s_header.s_magic = MESSAGE_MAGIC;
-    m.s_header.s_local_time = get_lamport_time();
+    m.s_header.s_local_time = t;
     m.s_header.s_payload_len = 0;
 
     return m;
