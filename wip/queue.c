@@ -2,32 +2,30 @@
 #include "queue.h"
 #include "stdlib.h"
 
-queue_t queue = {0, NULL};
-
-void add_item(local_id pid, timestamp_t times) {
-    item_t *newItem;
-    newItem = malloc(sizeof(item_t));
+void CSQueueAdd(local_id pid, timestamp_t times) {
+    CSQueueNode *newItem;
+    newItem = malloc(sizeof(CSQueueNode));
     newItem->pid = pid;
-    newItem->times = times;
+    newItem->lstamp = times;
     newItem->next = NULL;
 
-    if(queue.length == 0)
+    if(queue.size == 0)
         queue.head = newItem;
     else {
-        item_t *current = queue.head;
-        item_t *prevItem;
+        CSQueueNode *current = queue.head;
+        CSQueueNode *prevItem;
 
-        if(queue.length == 1) {
-            if(current->times > times) {
+        if(queue.size == 1) {
+            if(current->lstamp > times) {
                 newItem->next = current;
                 queue.head = newItem;
             }
 
-            if(current->times < times) {
+            if(current->lstamp < times) {
                 current->next = newItem;
             }
 
-            if(current->times == times) {
+            if(current->lstamp == times) {
                 if(current->pid < pid) {
                     newItem->next = current->next;
                     current->next = newItem;
@@ -36,17 +34,17 @@ void add_item(local_id pid, timestamp_t times) {
                     queue.head = newItem;
                 }
             }
-            queue.length ++;
+            ++queue.size;
             return;
         }
 
-        while (current->next != NULL && current->times <= times) {
+        while (current->next != NULL && current->lstamp <= times) {
             prevItem = current;
             current = current->next;
         }
 
         if(current->next != NULL) {
-            if(current->times == times) {
+            if(current->lstamp == times) {
                 if(current->pid < pid) {
                     newItem->next = current->next;
                     current->next = newItem;
@@ -54,7 +52,7 @@ void add_item(local_id pid, timestamp_t times) {
                     newItem->next = current;
                     prevItem->next = newItem;
                 }
-            } else if(current->times < times) {
+            } else if(current->lstamp < times) {
                 newItem->next = current->next;
                 current->next = newItem;
             } else {
@@ -62,14 +60,14 @@ void add_item(local_id pid, timestamp_t times) {
                 prevItem->next = newItem;
             }
         } else {
-            if(current->times == times) {
+            if(current->lstamp == times) {
                 if(current->pid < pid) {
                     current->next = newItem;
                 } else {
                     newItem->next = current;
                     prevItem->next = newItem;
                 }
-            } else if(current->times < times)
+            } else if(current->lstamp < times)
                 current->next = newItem;
             else {
                 newItem->next = current;
@@ -78,17 +76,17 @@ void add_item(local_id pid, timestamp_t times) {
         }
     }
 
-    queue.length ++;
+    ++queue.size;
 }
 
-int delete_item(local_id pid) {
-    item_t *prevItem, *current;
+int CSQueueDelete(local_id pid) {
+    CSQueueNode *prevItem, *current;
     current = queue.head;
 
     if(current->pid == pid) {
         queue.head = current->next;
         free(current);
-        queue.length --;
+        --queue.size;
         return 0;
     }
 
@@ -100,25 +98,25 @@ int delete_item(local_id pid) {
     if(current->next == NULL && current->pid != pid)
         return 1;
 
-    if(queue.length == 1)
+    if(queue.size == 1)
         queue.head = NULL;
     else
         prevItem->next = current->next;
 
     free(current);
-    queue.length --;
+    --queue.size;
     return 0;
 }
 
-item_t *get_head() {
+CSQueueNode *CSQueuePeek() {
     return queue.head;
 }
 
-void print_queue(int lid) {
-    item_t * current = queue.head;
+void CSQueuePrint(int lid) {
+    CSQueueNode * current = queue.head;
 
     while (current != NULL) {
-        printf("lid %d: (%d;%d)\n", lid, current->times, current->pid);
+        printf("lid %d: (%d;%d)\n", lid, current->lstamp, current->pid);
         current = current->next;
     }
 }

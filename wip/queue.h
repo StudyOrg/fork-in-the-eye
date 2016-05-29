@@ -1,25 +1,26 @@
-#ifndef DISTRIBUTED_CLASS_QUEUE_H
-#define DISTRIBUTED_CLASS_QUEUE_H
+#pragma once
 
 #include "ipc.h"
 
 typedef struct item {
+  /* ptr */
+  struct item *next;
+  /* data */
     local_id pid;
-    timestamp_t times;
-    struct item *next;
-} item_t;
+    timestamp_t lstamp;
+} CSQueueNode;
 
 typedef struct {
-    int length;
-    item_t *head;
-} queue_t;
+    int size;
+    CSQueueNode *head;
+} CSQueue;
 
-void add_item(local_id, timestamp_t);
+/* Global queue object */
+static CSQueue queue = {0, NULL};
 
-int delete_item(local_id);
-
-item_t *get_head();
-
-void print_queue();
-
-#endif
+/* Operations */
+void CSQueueAdd(local_id, timestamp_t);
+int CSQueueDelete(local_id);
+CSQueueNode* CSQueuePeek();
+/* Utils */
+void CSQueuePrint();

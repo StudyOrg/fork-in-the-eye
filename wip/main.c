@@ -171,7 +171,7 @@ void doChild(void *parentData, int lid, int initBalance, int mutexfl) {
                 lamport_update(resMsg.s_header.s_local_time);
                 tm = get_lamport_time();
 
-                add_item(rPid, resMsg.s_header.s_local_time);
+                CSQueueAdd(rPid, resMsg.s_header.s_local_time);
 
                 tm = get_lamport_time();
                 msg.s_header.s_type = CS_REPLY;
@@ -184,7 +184,7 @@ void doChild(void *parentData, int lid, int initBalance, int mutexfl) {
                 lamport_update(resMsg.s_header.s_local_time);
                 tm = get_lamport_time();
 
-                delete_item(rPid);
+                CSQueueDelete(rPid);
             }
 
             if(resMsg.s_header.s_type == CS_REPLY) {
@@ -202,7 +202,7 @@ void doChild(void *parentData, int lid, int initBalance, int mutexfl) {
             if(printIterator < printMax)
                 request_cs(&csdata);
 
-            item_t *head = get_head();
+            CSQueueNode *head = CSQueuePeek();
             if(head != NULL) {
                 if(replyCounter == data->procnum - 2 && head->pid == data->recent_pid) {
                     char str[MAX_PAYLOAD_LEN];
@@ -256,7 +256,7 @@ int request_cs(const void * self) {
         msg.s_header.s_local_time = tm;
         send_multicast(csdata->data, &msg);
 
-        add_item(csdata->data->recent_pid, tm);
+        CSQueueAdd(csdata->data->recent_pid, tm);
 
         requested = 1;
         return 1;
@@ -275,7 +275,7 @@ int release_cs(const void * self) {
         msg.s_header.s_local_time = tm;
         send_multicast(csdata->data, &msg);
 
-        delete_item(csdata->data->recent_pid);
+        CSQueueDelete(csdata->data->recent_pid);
 
         requested = 0;
         return 1;
