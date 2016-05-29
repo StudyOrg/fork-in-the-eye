@@ -12,6 +12,7 @@
 #include "common.h"
 #include "pa1.h"
 #include "router.h"
+#include "util.h"
 
 int send(void * data, local_id dst, const Message * msg) {
     Router *rt = (Router*)data;
