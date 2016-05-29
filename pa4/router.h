@@ -16,5 +16,5 @@ typedef struct  {
 } Router;
 
 typedef struct {
-    Router* rt;
+    Router* data;
 } RouterWrapper;

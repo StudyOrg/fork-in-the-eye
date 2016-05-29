@@ -1,4 +1,6 @@
 #pragma once
 
-static int _cs_use_lock = 0;
-static int _cs_locked = 0;
+extern int _cs_use_lock;
+
+int request_cs(const void * self);
+int release_cs(const void * self);

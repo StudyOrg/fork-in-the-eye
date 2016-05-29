@@ -1,70 +1,71 @@
-#include "ipc.h"
+#if __STDC_VERSION__ >= 199901L
+#define _XOPEN_SOURCE 600
+#else
+#define _XOPEN_SOURCE 500
+#endif /* __STDC_VERSION__ */
 
+#include <stdlib.h>
 #include <unistd.h>
+#include <time.h>
 
+#include "ipc.h"
+#include "common.h"
+#include "pa1.h"
 #include "router.h"
-#include "util.h"
 
-int send(void *data, local_id dst, const Message * msg) {
-    Router *rt = (Router*)data;
-    size_t size = sizeof(msg->s_header) + msg->s_header.s_payload_len;
+int send(void * self, local_id dst, const Message * msg) {
+    Router* data = self;
+    uint16_t size = sizeof(msg->s_header) + msg->s_header.s_payload_len;
 
-    int *fd = rt->routes[dst][rt->recent_pid];
-
-    if(write(fd[OUT], msg, size) != size) {
+    if(write(data->routes[dst][data->recent_pid][OUT], msg, size) != size)
         return 1;
-    }
-
     return 0;
 }
 
-int send_multicast(void *data, const Message * msg) {
-    Router *rt = (Router*)data;
+int send_multicast(void * self, const Message * msg) {
+    Router* data = self;
 
-    for(int i = 0; i < rt->procnum; i++) {
-        if(i == rt->recent_pid) {
+    for(int i = 0; i < data->procnum; i++) {
+        if(i == data->recent_pid)
             continue;
-        }
-        if(send(data, i, msg) != 0) {
+        if(send(self, i, msg) != 0)
             return 1;
-        }
     }
     return 0;
 }
 
-int receive(void *data, local_id from, Message * msg) {
-    Router *rt = (Router*)data;
-    size_t size = sizeof(msg->s_header);
+int receive(void * self, local_id from, Message * msg) {
+    Router* data = self;
+    uint16_t size = sizeof(msg->s_header);
 
-    int *fd = rt->routes[rt->recent_pid][from];
-
-    if(read(fd[IN], &msg->s_header, size) != size) {
+    if(read(data->routes[data->recent_pid][from][IN], &msg->s_header, size) != size)
         return -1;
-    }
 
     size = msg->s_header.s_payload_len;
 
-    if(read(fd[IN], &msg->s_payload, size) != size) {
+    if(read(data->routes[data->recent_pid][from][IN], &msg->s_payload, size) != size)
         return -1;
-    }
 
     return 0;
 }
 
-int receive_any(void *data, Message * msg) {
-    Router *rt = (Router*)data;
+int receive_any(void * self, Message * msg) {
+    Router* data = self;
 
-    for(int i = 0; i < rt->procnum; i++) {
-        if(i == rt->recent_pid) {
+    for(int i = 0; i < data->procnum; i++) {
+        if(i == data->recent_pid)
             continue;
-        }
-
-        if(receive(data, i, msg) == 0) {
-            return 0;
-        }
+        if(receive(self, i, msg) == 0)
+            return i;
     }
 
-    receive_sleep();
+    struct timespec tmr;
+    tmr.tv_sec = 0;
+    tmr.tv_nsec = 50000000;
 
-    return 1;
+    if(nanosleep(&tmr, NULL) < 0 ) {
+        return -1;
+    }
+
+    return -2;
 }

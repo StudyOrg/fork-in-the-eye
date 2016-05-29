@@ -78,7 +78,7 @@ void transfer(void * parent_data, local_id src, local_id dst, balance_t amount);
 /** Perform a number of transfers between various children with ids [1;max_id]
  *
  * @param parent_data   Any data structure implemented by students to perform I/O,
- *                    lib32  will be passed to transfer()
+ *                      will be passed to transfer()
  * @param max_id max    id of existing process, so that (max_id + 1) is the total
  *                      number of processes
  */

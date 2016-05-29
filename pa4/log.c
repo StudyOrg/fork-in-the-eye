@@ -34,6 +34,7 @@ void events_info(const char* format, ...) {
     va_start(args, format);
 
     vfprintf(log.events_file, format, args);
+    //vprintf(format, args);
 
     va_end(args);
     fflush(log.events_file);

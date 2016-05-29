@@ -3,9 +3,9 @@
 #include "ipc.h"
 
 typedef struct item {
-  /* ptr */
-  struct item *next;
-  /* data */
+    /* ptr */
+    struct item *next;
+    /* data */
     local_id pid;
     timestamp_t lstamp;
 } CSQueueNode;
@@ -16,7 +16,7 @@ typedef struct {
 } CSQueue;
 
 /* Global queue object */
-static CSQueue queue = {0, NULL};
+static CSQueue queue = {0, 0};
 
 /* Operations */
 void CSQueueAdd(local_id, timestamp_t);
