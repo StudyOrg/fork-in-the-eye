@@ -59,13 +59,7 @@ int receive_any(void * self, Message * msg) {
             return i;
     }
 
-    struct timespec tmr;
-    tmr.tv_sec = 0;
-    tmr.tv_nsec = 50000000;
-
-    if(nanosleep(&tmr, NULL) < 0 ) {
-        return -1;
-    }
+    receive_sleep();
 
     return -2;
 }
