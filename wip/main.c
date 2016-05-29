@@ -17,17 +17,14 @@
 #include "log.h"
 #include "util.h"
 #include "lamport_time.h"
+#include "cs_util.h"
 
-void doChild(void *, int, int, int);
+void doChild(void *, int, int);
 
 int main(int argc, char *argv[]) {
     init_log();
 
-    int pid;
     Router data;
-    int start_msgs, done_msgs;
-
-    int mutexfl = 0;
 
     TEST(argc < 3, "Usage: pa4 -p N [--mutexl]");
 
@@ -35,7 +32,7 @@ int main(int argc, char *argv[]) {
     TEST(data.procnum < 2, "Number of process must be >= 2");
 
     if (argc == 4) {
-        mutexfl = 1;
+        _cs_use_lock = 1;
     }
 
     ++data.procnum;
@@ -58,17 +55,17 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    Message msg, resMsg;
+    Message msg;
     msg.s_header.s_magic = MESSAGE_MAGIC;
     msg.s_header.s_local_time = 0;
 
     for(int i = 1; i < data.procnum; i++) {
-        pid = fork();
+        pid_t pid = fork();
 
         TEST(pid < 0, "Error creating the child\n");
 
         if (pid == 0) {
-            doChild(&data, i, 0, mutexfl);
+            doChild(&data, i, 0);
             exit(0);
         }
     }
@@ -76,19 +73,22 @@ int main(int argc, char *argv[]) {
     close_unused_pipes(&data);
 
     timestamp_t tm = get_lamport_time();
-    start_msgs = data.procnum - 1;
-    done_msgs = data.procnum - 1;
 
-    while(start_msgs) {
-        if(receive_any(&data, &resMsg) > -1) {
-            if(resMsg.s_header.s_type == STARTED) {
-                start_msgs--;
-                lamport_update(resMsg.s_header.s_local_time);
+    int start_messages_counter = data.procnum - 1;
+    int done_messages_counter = data.procnum - 1;
+
+		Message answer;
+
+    while(start_messages_counter) {
+        if(receive_any(&data, &answer) > -1) {
+            if(answer.s_header.s_type == STARTED) {
+                start_messages_counter--;
+                lamport_update(answer.s_header.s_local_time);
                 tm = get_lamport_time();
             }
-            if(resMsg.s_header.s_type == DONE) {
-                done_msgs--;
-                lamport_update(resMsg.s_header.s_local_time);
+            if(answer.s_header.s_type == DONE) {
+                done_messages_counter--;
+                lamport_update(answer.s_header.s_local_time);
                 tm = get_lamport_time();
             }
         }
@@ -96,11 +96,11 @@ int main(int argc, char *argv[]) {
 
     events_info(log_received_all_started_fmt, tm, data.recent_pid);
 
-    while(done_msgs) {
-        if(receive_any(&data, &resMsg) > -1) {
-            if(resMsg.s_header.s_type == DONE) {
-                done_msgs--;
-                lamport_update(resMsg.s_header.s_local_time);
+    while(done_messages_counter) {
+        if(receive_any(&data, &answer) > -1) {
+            if(answer.s_header.s_type == DONE) {
+                done_messages_counter--;
+                lamport_update(answer.s_header.s_local_time);
                 tm = get_lamport_time();
             }
         }
@@ -117,13 +117,13 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
-void doChild(void *parentData, int lid, int initBalance, int mutexfl) {
-    Message msg, resMsg;
+void doChild(void *parentData, int lid, int initBalance) {
+    Message msg, answer;
 
     Router* data = parentData;
 
-    int start_msgs = data->procnum - 2;
-    int done_msgs = data->procnum - 2;
+    int start_messages_counter = data->procnum - 2;
+    int done_messages_counter = data->procnum - 2;
 
     timestamp_t tm = lamport_global_stamp;
 
@@ -143,12 +143,12 @@ void doChild(void *parentData, int lid, int initBalance, int mutexfl) {
     msg.s_header.s_local_time = tm;
     send_multicast(data, &msg);
 
-    while(start_msgs) {
-        if(receive_any(data, &resMsg) > -1) {
-            if(resMsg.s_header.s_type == STARTED)
-                start_msgs--;
-            if(resMsg.s_header.s_type == DONE)
-                done_msgs--;
+    while(start_messages_counter) {
+        if(receive_any(data, &answer) > -1) {
+            if(answer.s_header.s_type == STARTED)
+                start_messages_counter--;
+            if(answer.s_header.s_type == DONE)
+                done_messages_counter--;
         }
     }
 
@@ -157,21 +157,21 @@ void doChild(void *parentData, int lid, int initBalance, int mutexfl) {
     int replyCounter = 0;
     int printIterator = 0;
     int printMax = data->recent_pid * 5;
-    while(done_msgs || printIterator < printMax) {
-        int rPid = receive_any(data, &resMsg);
+    while(done_messages_counter || printIterator < printMax) {
+        int rPid = receive_any(data, &answer);
         if(rPid > -1) {
-            if(resMsg.s_header.s_type == DONE) {
-                lamport_update(resMsg.s_header.s_local_time);
+            if(answer.s_header.s_type == DONE) {
+                lamport_update(answer.s_header.s_local_time);
                 tm = get_lamport_time();
 
-                done_msgs--;
+                done_messages_counter--;
             }
 
-            if(resMsg.s_header.s_type == CS_REQUEST) {
-                lamport_update(resMsg.s_header.s_local_time);
+            if(answer.s_header.s_type == CS_REQUEST) {
+                lamport_update(answer.s_header.s_local_time);
                 tm = get_lamport_time();
 
-                CSQueueAdd(rPid, resMsg.s_header.s_local_time);
+                CSQueueAdd(rPid, answer.s_header.s_local_time);
 
                 tm = get_lamport_time();
                 msg.s_header.s_type = CS_REPLY;
@@ -180,22 +180,22 @@ void doChild(void *parentData, int lid, int initBalance, int mutexfl) {
                 send(data, rPid, &msg);
             }
 
-            if(resMsg.s_header.s_type == CS_RELEASE) {
-                lamport_update(resMsg.s_header.s_local_time);
+            if(answer.s_header.s_type == CS_RELEASE) {
+                lamport_update(answer.s_header.s_local_time);
                 tm = get_lamport_time();
 
                 CSQueueDelete(rPid);
             }
 
-            if(resMsg.s_header.s_type == CS_REPLY) {
-                lamport_update(resMsg.s_header.s_local_time);
+            if(answer.s_header.s_type == CS_REPLY) {
+                lamport_update(answer.s_header.s_local_time);
                 tm = get_lamport_time();
 
                 replyCounter ++;
             }
         }
 
-        if(mutexfl == 1) {
+        if(_cs_use_lock) {
             RouterWrapper csdata;
             csdata.data = data;
 
@@ -241,44 +241,4 @@ void doChild(void *parentData, int lid, int initBalance, int mutexfl) {
     events_info(log_received_all_done_fmt, tm, data->recent_pid);
 
     exit(0);
-}
-
-int requested = 0;
-
-int request_cs(const void * self) {
-    if(requested == 0) {
-        Message msg;
-        const RouterWrapper* csdata = self;
-
-        timestamp_t tm = get_lamport_time();
-        msg.s_header.s_type = CS_REQUEST;
-        msg.s_header.s_payload_len = 0;
-        msg.s_header.s_local_time = tm;
-        send_multicast(csdata->data, &msg);
-
-        CSQueueAdd(csdata->data->recent_pid, tm);
-
-        requested = 1;
-        return 1;
-    } else
-        return 2;
-}
-
-int release_cs(const void * self) {
-    if(requested == 1) {
-        Message msg;
-        const RouterWrapper* csdata = self;
-
-        timestamp_t tm = get_lamport_time();
-        msg.s_header.s_type = CS_RELEASE;
-        msg.s_header.s_payload_len = 0;
-        msg.s_header.s_local_time = tm;
-        send_multicast(csdata->data, &msg);
-
-        CSQueueDelete(csdata->data->recent_pid);
-
-        requested = 0;
-        return 1;
-    } else
-        return 2;
 }
