@@ -16,24 +16,12 @@
 #include "queue.h"
 #include "log.h"
 #include "util.h"
+#include "lamport_time.h"
 
 void doChild(void *, int, int, int);
 
-static timestamp_t lamportStamp = 0;
-
-timestamp_t get_lamport_time() {
-    return ++lamportStamp;
-}
-
-timestamp_t max(timestamp_t a, timestamp_t b) {
-    if (a>b)
-        return a;
-    else
-        return b;
-}
-
 int main(int argc, char *argv[]) {
-		init_log();
+    init_log();
 
     int pid;
     Router data;
@@ -65,7 +53,7 @@ int main(int argc, char *argv[]) {
                 set_nonlock(data.routes[i][j][IN]);
                 set_nonlock(data.routes[i][j][IN]);
 
-								pipes_info("pipe: created for %d <-> %d\n", j, i);
+                pipes_info("pipe: created for %d <-> %d\n", j, i);
             }
         }
     }
@@ -79,7 +67,7 @@ int main(int argc, char *argv[]) {
 
         TEST(pid < 0, "Error creating the child\n");
 
-       if (pid == 0) {
+        if (pid == 0) {
             doChild(&data, i, 0, mutexfl);
             exit(0);
         }
@@ -95,36 +83,36 @@ int main(int argc, char *argv[]) {
         if(receive_any(&data, &resMsg) > -1) {
             if(resMsg.s_header.s_type == STARTED) {
                 start_msgs--;
-                lamportStamp = max(lamportStamp, resMsg.s_header.s_local_time);
+                lamport_update(resMsg.s_header.s_local_time);
                 tm = get_lamport_time();
             }
             if(resMsg.s_header.s_type == DONE) {
                 done_msgs--;
-                lamportStamp = max(lamportStamp, resMsg.s_header.s_local_time);
+                lamport_update(resMsg.s_header.s_local_time);
                 tm = get_lamport_time();
             }
         }
     }
 
-		events_info(log_received_all_started_fmt, tm, data.recent_pid);
+    events_info(log_received_all_started_fmt, tm, data.recent_pid);
 
     while(done_msgs) {
         if(receive_any(&data, &resMsg) > -1) {
             if(resMsg.s_header.s_type == DONE) {
                 done_msgs--;
-                lamportStamp = max(lamportStamp, resMsg.s_header.s_local_time);
+                lamport_update(resMsg.s_header.s_local_time);
                 tm = get_lamport_time();
             }
         }
     }
 
-		events_info(log_received_all_done_fmt, tm, data.recent_pid);
+    events_info(log_received_all_done_fmt, tm, data.recent_pid);
 
     for(int i = 0; i < data.procnum; i++) {
         wait(&i);
     }
 
-release_log();
+    release_log();
 
     return 0;
 }
@@ -137,7 +125,7 @@ void doChild(void *parentData, int lid, int initBalance, int mutexfl) {
     int start_msgs = data->procnum - 2;
     int done_msgs = data->procnum - 2;
 
-    timestamp_t tm = lamportStamp;
+    timestamp_t tm = lamport_global_stamp;
 
     data->recent_pid = lid;
 
@@ -145,7 +133,7 @@ void doChild(void *parentData, int lid, int initBalance, int mutexfl) {
 
     balance_t childBalance = initBalance;
 
-		events_info(log_started_fmt, tm, data->recent_pid, getpid(), getppid(), childBalance);
+    events_info(log_started_fmt, tm, data->recent_pid, getpid(), getppid(), childBalance);
 
     tm = get_lamport_time();
     msg.s_header.s_type = STARTED;
@@ -164,7 +152,7 @@ void doChild(void *parentData, int lid, int initBalance, int mutexfl) {
         }
     }
 
-		events_info(log_received_all_started_fmt, tm, data->recent_pid);
+    events_info(log_received_all_started_fmt, tm, data->recent_pid);
 
     int replyCounter = 0;
     int printIterator = 0;
@@ -173,14 +161,14 @@ void doChild(void *parentData, int lid, int initBalance, int mutexfl) {
         int rPid = receive_any(data, &resMsg);
         if(rPid > -1) {
             if(resMsg.s_header.s_type == DONE) {
-                lamportStamp = max(lamportStamp, resMsg.s_header.s_local_time);
+                lamport_update(resMsg.s_header.s_local_time);
                 tm = get_lamport_time();
 
                 done_msgs--;
             }
 
             if(resMsg.s_header.s_type == CS_REQUEST) {
-                lamportStamp = max(lamportStamp, resMsg.s_header.s_local_time);
+                lamport_update(resMsg.s_header.s_local_time);
                 tm = get_lamport_time();
 
                 add_item(rPid, resMsg.s_header.s_local_time);
@@ -193,14 +181,14 @@ void doChild(void *parentData, int lid, int initBalance, int mutexfl) {
             }
 
             if(resMsg.s_header.s_type == CS_RELEASE) {
-                lamportStamp = max(lamportStamp, resMsg.s_header.s_local_time);
+                lamport_update(resMsg.s_header.s_local_time);
                 tm = get_lamport_time();
 
                 delete_item(rPid);
             }
 
             if(resMsg.s_header.s_type == CS_REPLY) {
-                lamportStamp = max(lamportStamp, resMsg.s_header.s_local_time);
+                lamport_update(resMsg.s_header.s_local_time);
                 tm = get_lamport_time();
 
                 replyCounter ++;
@@ -239,7 +227,7 @@ void doChild(void *parentData, int lid, int initBalance, int mutexfl) {
         }
 
         if(printIterator == printMax) {
-						events_info(log_done_fmt, tm, data->recent_pid, childBalance);
+            events_info(log_done_fmt, tm, data->recent_pid, childBalance);
 
             msg.s_header.s_type = DONE;
             sprintf(msg.s_payload, log_done_fmt, tm, data->recent_pid, childBalance);
@@ -250,7 +238,7 @@ void doChild(void *parentData, int lid, int initBalance, int mutexfl) {
         }
     }
 
-		events_info(log_received_all_done_fmt, tm, data->recent_pid);
+    events_info(log_received_all_done_fmt, tm, data->recent_pid);
 
     exit(0);
 }
